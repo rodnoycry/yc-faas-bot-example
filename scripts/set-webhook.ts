@@ -1,41 +1,30 @@
-// This script is used to set the webhook for the bot.
-// It is called by Vercel during the build process.
+import { logger } from "../src/logger"
 
-import { bot } from "../src/bot.js"
-import { DEV_DOMAIN } from "../src/env.js"
-import { logger } from "../src/utils/logger.js"
+const DEPLOYMENT_URL = process.env.DEPLOYMENT_URL
+const BOT_TOKEN = process.env.BOT_TOKEN
+
+if (!DEPLOYMENT_URL) {
+    throw new Error(
+        "Please set DEPLOYMENT_URL env variable before running the script",
+    )
+}
+if (!BOT_TOKEN) {
+    throw new Error(
+        "Please set BOT_TOKEN env variable before running the script",
+    )
+}
+
+const telegramApi = `https://api.telegram.org/bot${BOT_TOKEN}/setWebhook?url=${DEPLOYMENT_URL}`
 
 async function setWebhook() {
-    // Check for a command-line argument for the URL.
-    const localUrl = DEV_DOMAIN
-    // Fallback to Vercel's system environment variable.
-    const vercelUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+    const response = await fetch(telegramApi)
+    const result = await response.json()
 
-    const url = localUrl || vercelUrl
+    logger.log("Telegram response:", JSON.stringify(result, null, 2))
 
-    if (!url) {
-        if (process.env.NODE_ENV === "production") {
-            throw new Error(
-                "Webhook URL is not set (checked local arg and VERCEL_URL).",
-            )
-        }
-        logger.info("Webhook URL not found, skipping setup.")
-        return
+    if (!response.ok) {
+        process.exit(1)
     }
-
-    // Use the URL constructor for robust parsing
-    let host: string | null = null
-    if (url.startsWith("http")) {
-        host = new URL(url).host
-        logger.info("Detected full URL, host is: ", host)
-    } else {
-        host = new URL(`https://${url}`).host
-        logger.info("Detected domain, host is: ", host)
-    }
-
-    const webhookUrl = `https://${host}/api/webhook`
-    await bot.api.setWebhook(webhookUrl)
-    logger.info(`Webhook set to ${webhookUrl}`)
 }
 
 setWebhook().catch((err) => {

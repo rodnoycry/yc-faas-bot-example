@@ -1,26 +1,38 @@
 {
-  "name": "yc-faas-bot-example",
-  "private": true,
-  "version": "0.0.1",
-  "type": "module",
-  "scripts": {
-    "webhook": "dotenv -e .env -- tsx scripts/set-webhook.ts",
-    "vercel": "pnpm run webhook && dotenv -e .env -- vercel dev",
-    "dev:v": "nodemon --watch api --watch src --watch scripts -e ts,json --ignore .vercel/ --exec \"pnpm run vercel\"",
-    "fmt": "biome format --write ./src",
-    "lint": "biome lint ./src",
-    "ts": "tsc --noEmit"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "2.4.13",
-    "@types/node": "^20.14.9",
-    "dotenv-cli": "^8.0.0",
-    "nodemon": "^3.1.10",
-    "tsx": "^4.20.3",
-    "typescript": "~5.8.3",
-    "vercel": "^44.2.13"
-  },
-  "dependencies": {
-    "grammy": "^1.37.0"
-  }
+	"name": "yc-faas-ai-bot-example",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy --env production",
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"test": "vitest",
+		"fmt": "biome format --write ./src",
+		"lint": "biome lint ./src",
+		"cf-typegen": "wrangler types",
+		"webhook": "dotenv -e .env -- tsx ./scripts/set-webhook.ts",
+		"secrets:prod": "wrangler secret bulk .env.production --env production",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate": "wrangler d1 migrations apply yc-faas-ai-bot-example-db --remote"
+	},
+	"devDependencies": {
+        "@biomejs/biome": "^2.4.13",
+		"@cloudflare/vitest-pool-workers": "^0.12.4",
+		"@types/node": "24.10.1",
+		"dotenv-cli": "^11.0.0",
+		"drizzle-kit": "^0.31.10",
+		"globals": "^16.4.0",
+		"tsx": "^4.21.0",
+		"typescript": "^5.5.2",
+		"vitest": "~3.2.0",
+		"wrangler": "^4.83.0"
+	},
+	"dependencies": {
+		"@ai-sdk/openai-compatible": "^2.0.41",
+		"@grammyjs/auto-retry": "^2.0.2",
+		"@grammyjs/stream": "^1.0.1",
+		"ai": "^6.0.168",
+		"drizzle-orm": "^0.45.2",
+		"grammy": "^1.42.0"
+	}
 }
