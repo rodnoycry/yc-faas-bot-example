@@ -93,14 +93,21 @@ function createProvider(env: Env) {
     })
 }
 
-async function handleLLMResponse(
-    sql: Sql,
-    model: LanguageModel,
-    chatId: number,
-    userText: string,
-    api: Bot["api"],
-    draftIdOffset: number,
-): Promise<void> {
+async function handleLLMResponse({
+    sql,
+    model,
+    chatId,
+    userText,
+    api,
+    draftIdOffset,
+}: {
+    sql: Sql
+    model: LanguageModel
+    chatId: number
+    userText: string
+    api: Bot["api"]
+    draftIdOffset: number
+}): Promise<void> {
     const [history] = await Promise.all([
         getChatHistory(sql, chatId),
         saveMessage(sql, chatId, "user", userText),
@@ -129,7 +136,11 @@ function registerSyncHandlers(bot: Bot, env: Env, accessToken: string): void {
 
     bot.on("message:text", async (ctx) => {
         await ctx.api.sendChatAction(ctx.chat.id, "typing")
-        await invokeAsync(env.DEPLOYMENT_URL, accessToken, ctx.update)
+        await invokeAsync({
+            deploymentUrl: env.DEPLOYMENT_URL,
+            accessToken,
+            update: ctx.update,
+        })
     })
 }
 
@@ -141,22 +152,26 @@ function registerAsyncHandlers(bot: Bot, sql: Sql, env: Env): void {
 
     bot.on("message:text", async (ctx) => {
         const provider = createProvider(env)
-        await handleLLMResponse(
+        await handleLLMResponse({
             sql,
-            provider.chatModel(env.LLM_MODEL),
-            ctx.chat.id,
-            ctx.message.text,
-            ctx.api,
-            256 * ctx.update.update_id,
-        )
+            model: provider.chatModel(env.LLM_MODEL),
+            chatId: ctx.chat.id,
+            userText: ctx.message.text,
+            api: ctx.api,
+            draftIdOffset: 256 * ctx.update.update_id,
+        })
     })
 }
 
-async function invokeAsync(
-    deploymentUrl: string,
-    accessToken: string,
-    update: Update,
-): Promise<void> {
+async function invokeAsync({
+    deploymentUrl,
+    accessToken,
+    update,
+}: {
+    deploymentUrl: string
+    accessToken: string
+    update: Update
+}): Promise<void> {
     const url = `${deploymentUrl.replace(/\/$/, "")}?integration=async`
     const res = await fetch(url, {
         method: "POST",

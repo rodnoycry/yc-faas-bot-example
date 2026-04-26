@@ -23,7 +23,7 @@ async function initDb() {
         logger.log("DB initialized")
     } finally {
         logger.log("Closing connection")
-        await driver.close()
+        driver.close()
     }
 }
 

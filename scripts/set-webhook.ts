@@ -1,13 +1,13 @@
 import { logger } from "../src/logger"
 
 const DEPLOYMENT_URL = process.env.DEPLOYMENT_URL
-const BOT_TOKEN = process.env.BOT_TOKEN
-
 if (!DEPLOYMENT_URL) {
     throw new Error(
         "Please set DEPLOYMENT_URL env variable before running the script",
     )
 }
+
+const BOT_TOKEN = process.env.BOT_TOKEN
 if (!BOT_TOKEN) {
     throw new Error(
         "Please set BOT_TOKEN env variable before running the script",
