@@ -129,9 +129,7 @@ async function handleLLMResponse({
 
 function registerSyncHandlers(bot: Bot, env: Env, accessToken: string): void {
     bot.command("start", (ctx) =>
-        ctx.reply(
-            "Привет! Отправь мне текстовое сообщение, и я постараюсь быть полезным",
-        ),
+        ctx.reply("Hi! Send me a message and I will try to help you"),
     )
 
     bot.on("message:text", async (ctx) => {
@@ -147,7 +145,7 @@ function registerSyncHandlers(bot: Bot, env: Env, accessToken: string): void {
 function registerAsyncHandlers(bot: Bot, sql: Sql, env: Env): void {
     bot.command("new", async (ctx) => {
         await clearChatHistory(sql, ctx.chat.id)
-        await ctx.reply("Контекст очищен")
+        await ctx.reply("Context cleared")
     })
 
     bot.on("message:text", async (ctx) => {
@@ -238,7 +236,7 @@ async function handleAsync(event: unknown): Promise<void> {
         registerAsyncHandlers(bot, sql, env)
         await bot.handleUpdate(update)
     } finally {
-        await driver.close()
+        driver.close()
     }
 }
 

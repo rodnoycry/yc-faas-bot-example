@@ -15,6 +15,8 @@ perfect for this: append `?integration=async` to the function URL and the
 function returns **HTTP 202 immediately** while the actual handler runs in the
 background.
 
+- [Async function invocation](https://yandex.cloud/en/docs/functions/concepts/function-invoke-async)
+
 So the function dispatches between two paths:
 
 1. **Sync path (Telegram webhook hits the public URL):**
@@ -30,7 +32,6 @@ One function, no extra queues to manage. Failures on the async path could be
 routed to a YMQ DLQ later if you need retry/observability.
 
 References:
-- [Async function invocation](https://yandex.cloud/en/docs/functions/concepts/function-invoke-async)
 - [Invoking a function (overview)](https://yandex.cloud/en/docs/functions/concepts/function-invoke)
 
 ## YDB driver lifecycle
@@ -39,11 +40,13 @@ The YDB SDK uses HTTP/2 connections that **must not be reused across
 serverless invocations** — a cached driver causes hangs and intermittent
 errors. The handler creates a `Driver` inside the request scope and closes it
 in `finally`. See `src/index.ts:handleAsync`.
+Reference:
+- https://github.com/ydb-platform/ydb-js-sdk/tree/main/examples/sls#readme
 
 ## Prerequisites
 
 - [Yandex Cloud CLI](https://yandex.cloud/en/docs/cli/quickstart) (`yc`)
-- Node.js 22+, `pnpm`
+- Node.js 22+, pnpm
 - A Telegram bot token from [@BotFather](https://t.me/BotFather)
 - An OpenAI-compatible LLM endpoint (URL + API key + model name)
 
