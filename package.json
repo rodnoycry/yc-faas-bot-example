@@ -7,8 +7,8 @@
     "webhook": "dotenv -e .env -- tsx scripts/set-webhook.ts",
     "vercel": "pnpm run webhook && dotenv -e .env -- vercel dev",
     "dev:v": "nodemon --watch api --watch src --watch scripts -e ts,json --ignore .vercel/ --exec \"pnpm run vercel\"",
-    "fmt": "biome format --write ./src && eslint ./src --fix",
-    "lint": "biome lint ./src && eslint ./src",
+    "fmt": "biome format --write ./src",
+    "lint": "biome lint ./src",
     "ts": "tsc --noEmit"
   },
   "devDependencies": {
