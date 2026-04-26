@@ -1,7 +1,7 @@
 {
-  "name": "telegram-bot-webhook-template",
+  "name": "yc-faas-bot-example",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "webhook": "dotenv -e .env -- tsx scripts/set-webhook.ts",
@@ -12,7 +12,7 @@
     "ts": "tsc --noEmit"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.0.6",
+    "@biomejs/biome": "2.4.13",
     "@types/node": "^20.14.9",
     "dotenv-cli": "^8.0.0",
     "nodemon": "^3.1.10",
