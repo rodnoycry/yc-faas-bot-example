@@ -60,11 +60,20 @@ Fill in `.env.production`:
 
 - `BOT_TOKEN` — from BotFather.
 - `BOT_INFO` — paste the full JSON from `https://api.telegram.org/bot<BOT_TOKEN>/getMe`
-  (single-quoted).
-- `LLM_API_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` — your LLM endpoint.
+  (single-quoted). See "Why BOT_INFO" below.
+- `AI_PROVIDER_NAME`, `AI_PROVIDER_BASE_URL`, `AI_PROVIDER_API_KEY`,
+  `AI_PROVIDER_MODEL` — any OpenAI-compatible chat endpoint, for example [Yandex AI Studio](https://aistudio.yandex.ru/)
 
 The remaining values (`YC_*`, `YDB_*`, `DEPLOYMENT_URL`) are filled in during
 the steps below.
+
+### Why BOT_INFO?
+
+If `botInfo` is not passed to grammy's `new Bot(...)`, the library lazily
+calls Telegram's `getMe` on the first update — once per process. In a
+long-running bot that's a one-time cost; in serverless every cold container
+pays it on the first webhook hit, slowing down the sync path. Pasting the
+`getMe` response into `BOT_INFO` skips that round-trip entirely.
 
 ## 2. Create a YDB serverless database
 

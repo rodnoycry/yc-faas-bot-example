@@ -5,7 +5,7 @@
     "type": "commonjs",
     "scripts": {
         "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.js --sourcemap",
-        "deploy": "pnpm run build && yc serverless function version create --function-name=$YC_FUNCTION_NAME --runtime=nodejs22 --entrypoint=index.handler --memory=256m --execution-timeout=60s --service-account-id=$YC_SERVICE_ACCOUNT_ID --environment=YDB_CONNECTION_STRING=$YDB_CONNECTION_STRING,BOT_TOKEN=$BOT_TOKEN,BOT_INFO=$BOT_INFO,LLM_API_BASE_URL=$LLM_API_BASE_URL,LLM_API_KEY=$LLM_API_KEY,LLM_MODEL=$LLM_MODEL,DEPLOYMENT_URL=$DEPLOYMENT_URL --source-path=./dist",
+        "deploy": "pnpm run build && yc serverless function version create --function-name=$YC_FUNCTION_NAME --runtime=nodejs22 --entrypoint=index.handler --memory=256m --execution-timeout=60s --service-account-id=$YC_SERVICE_ACCOUNT_ID --environment=YDB_CONNECTION_STRING=$YDB_CONNECTION_STRING,BOT_TOKEN=$BOT_TOKEN,BOT_INFO=$BOT_INFO,AI_PROVIDER_NAME=$AI_PROVIDER_NAME,AI_PROVIDER_BASE_URL=$AI_PROVIDER_BASE_URL,AI_PROVIDER_API_KEY=$AI_PROVIDER_API_KEY,AI_PROVIDER_MODEL=$AI_PROVIDER_MODEL,DEPLOYMENT_URL=$DEPLOYMENT_URL --source-path=./dist",
         "deploy:prod": "dotenv -e .env.production -- pnpm run deploy",
         "dev": "tsx scripts/dev.ts",
         "fmt": "biome format --write ./src ./scripts",

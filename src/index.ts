@@ -1,26 +1,13 @@
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
-import { autoRetry } from "@grammyjs/auto-retry"
-import { streamApi } from "@grammyjs/stream"
-import type { Http } from "@yandex-cloud/function-types/dist/src/http"
-import type { Update } from "grammy/types"
-import { type LanguageModel, streamText } from "ai"
-import { Bot } from "grammy"
-import {
-    clearChatHistory,
-    createDriver,
-    createSql,
-    getChatHistory,
-    saveMessage,
-    type Sql,
-} from "./db"
+import { handleAsync, handleSync, isHttpEvent } from "./bot"
 import { logger } from "./logger"
 
-interface Env {
+export interface Env {
     BOT_INFO: string
     BOT_TOKEN: string
-    LLM_API_BASE_URL: string
-    LLM_API_KEY: string
-    LLM_MODEL: string
+    AI_PROVIDER_NAME: string
+    AI_PROVIDER_BASE_URL: string
+    AI_PROVIDER_API_KEY: string
+    AI_PROVIDER_MODEL: string
     DEPLOYMENT_URL: string
 }
 
@@ -28,9 +15,10 @@ function readEnv(): Env {
     const required = [
         "BOT_INFO",
         "BOT_TOKEN",
-        "LLM_API_BASE_URL",
-        "LLM_API_KEY",
-        "LLM_MODEL",
+        "AI_PROVIDER_NAME",
+        "AI_PROVIDER_BASE_URL",
+        "AI_PROVIDER_API_KEY",
+        "AI_PROVIDER_MODEL",
         "DEPLOYMENT_URL",
     ] as const
     for (const key of required) {
@@ -41,9 +29,10 @@ function readEnv(): Env {
     return {
         BOT_INFO: process.env.BOT_INFO as string,
         BOT_TOKEN: process.env.BOT_TOKEN as string,
-        LLM_API_BASE_URL: process.env.LLM_API_BASE_URL as string,
-        LLM_API_KEY: process.env.LLM_API_KEY as string,
-        LLM_MODEL: process.env.LLM_MODEL as string,
+        AI_PROVIDER_NAME: process.env.AI_PROVIDER_NAME as string,
+        AI_PROVIDER_BASE_URL: process.env.AI_PROVIDER_BASE_URL as string,
+        AI_PROVIDER_API_KEY: process.env.AI_PROVIDER_API_KEY as string,
+        AI_PROVIDER_MODEL: process.env.AI_PROVIDER_MODEL as string,
         DEPLOYMENT_URL: process.env.DEPLOYMENT_URL as string,
     }
 }
@@ -77,174 +66,12 @@ interface FunctionContext {
     token?: { access_token: string; expires_in: number; token_type: string }
 }
 
-function createBot(env: Env): Bot {
-    const bot = new Bot(env.BOT_TOKEN, {
-        botInfo: JSON.parse(env.BOT_INFO),
-    })
-    bot.api.config.use(autoRetry())
-    return bot
-}
-
-function createProvider(env: Env) {
-    return createOpenAICompatible({
-        name: "custom-llm",
-        baseURL: env.LLM_API_BASE_URL,
-        apiKey: env.LLM_API_KEY,
-    })
-}
-
-async function handleLLMResponse({
-    sql,
-    model,
-    chatId,
-    userText,
-    api,
-    draftIdOffset,
-}: {
-    sql: Sql
-    model: LanguageModel
-    chatId: number
-    userText: string
-    api: Bot["api"]
-    draftIdOffset: number
-}): Promise<void> {
-    const [history] = await Promise.all([
-        getChatHistory(sql, chatId),
-        saveMessage(sql, chatId, "user", userText),
-    ])
-
-    const { textStream, text: textPromise } = streamText({
-        model,
-        system: SYSTEM_PROMPT,
-        messages: [...history, { role: "user", content: userText }],
-    })
-
-    await api.sendChatAction(chatId, "typing")
-    const { streamMessage } = streamApi(api.raw)
-    await streamMessage(chatId, draftIdOffset, textStream)
-
-    const fullText = await textPromise
-    await saveMessage(sql, chatId, "assistant", fullText)
-}
-
-function registerSyncHandlers(bot: Bot, env: Env, accessToken: string): void {
-    bot.command("start", (ctx) =>
-        ctx.reply("Hi! Send me a message and I will try to help you"),
-    )
-
-    bot.on("message:text", async (ctx) => {
-        await ctx.api.sendChatAction(ctx.chat.id, "typing")
-        await invokeAsync({
-            deploymentUrl: env.DEPLOYMENT_URL,
-            accessToken,
-            update: ctx.update,
-        })
-    })
-}
-
-function registerAsyncHandlers(bot: Bot, sql: Sql, env: Env): void {
-    bot.command("new", async (ctx) => {
-        await clearChatHistory(sql, ctx.chat.id)
-        await ctx.reply("Context cleared")
-    })
-
-    bot.on("message:text", async (ctx) => {
-        const provider = createProvider(env)
-        await handleLLMResponse({
-            sql,
-            model: provider.chatModel(env.LLM_MODEL),
-            chatId: ctx.chat.id,
-            userText: ctx.message.text,
-            api: ctx.api,
-            draftIdOffset: 256 * ctx.update.update_id,
-        })
-    })
-}
-
-async function invokeAsync({
-    deploymentUrl,
-    accessToken,
-    update,
-}: {
-    deploymentUrl: string
-    accessToken: string
-    update: Update
-}): Promise<void> {
-    const url = `${deploymentUrl.replace(/\/$/, "")}?integration=async`
-    const res = await fetch(url, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify(update),
-    })
-    if (res.status !== 202) {
-        const text = await res.text()
-        throw new Error(
-            `Async self-invocation failed: ${res.status} ${res.statusText} ${text}`,
-        )
-    }
-}
-
-function isHttpEvent(event: unknown): event is Http.Event {
-    return (
-        typeof event === "object" &&
-        event !== null &&
-        "httpMethod" in event &&
-        "headers" in event
-    )
-}
-
-function parseAsyncBody(event: unknown): Update {
-    if (typeof event === "string") {
-        return JSON.parse(event) as Update
-    }
-    if (event instanceof Uint8Array) {
-        return JSON.parse(Buffer.from(event).toString("utf-8")) as Update
-    }
-    if (typeof event === "object" && event !== null) {
-        // Some runtimes deliver the body already as a parsed object.
-        return event as Update
-    }
-    throw new Error("Unexpected async invocation event shape")
-}
-
-async function handleSync(
-    event: Http.Event,
-    accessToken: string,
-): Promise<Http.Result> {
-    const env = readEnv()
-    const body = event.isBase64Encoded
-        ? Buffer.from(event.body, "base64").toString("utf-8")
-        : event.body
-    const update = JSON.parse(body) as Update
-    const bot = createBot(env)
-    registerSyncHandlers(bot, env, accessToken)
-    await bot.handleUpdate(update)
-    return { statusCode: 200, body: "" }
-}
-
-async function handleAsync(event: unknown): Promise<void> {
-    const env = readEnv()
-    const update = parseAsyncBody(event)
-    const driver = createDriver()
-    try {
-        await driver.ready()
-        const sql = createSql(driver)
-        const bot = createBot(env)
-        registerAsyncHandlers(bot, sql, env)
-        await bot.handleUpdate(update)
-    } finally {
-        driver.close()
-    }
-}
-
 export const handler = async (
     event: unknown,
     context: FunctionContext,
 ): Promise<unknown> => {
     try {
+        const env = readEnv()
         if (isHttpEvent(event)) {
             const accessToken = context.token?.access_token
             if (!accessToken) {
@@ -252,9 +79,9 @@ export const handler = async (
                     "Function context has no IAM token — attach a service account",
                 )
             }
-            return await handleSync(event, accessToken)
+            return await handleSync({ event, env, accessToken })
         }
-        await handleAsync(event)
+        await handleAsync({ event, env, systemPrompt: SYSTEM_PROMPT })
         return { statusCode: 200, body: "" }
     } catch (err) {
         logger.error("Handler failed:", err)
