@@ -1,0 +1,26 @@
+{
+  "name": "telegram-bot-webhook-template",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "webhook": "dotenv -e .env -- tsx scripts/set-webhook.ts",
+    "vercel": "pnpm run webhook && dotenv -e .env -- vercel dev",
+    "dev:v": "nodemon --watch api --watch src --watch scripts -e ts,json --ignore .vercel/ --exec \"pnpm run vercel\"",
+    "fmt": "biome format --write ./src && eslint ./src --fix",
+    "lint": "biome lint ./src && eslint ./src",
+    "ts": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.0.6",
+    "@types/node": "^20.14.9",
+    "dotenv-cli": "^8.0.0",
+    "nodemon": "^3.1.10",
+    "tsx": "^4.20.3",
+    "typescript": "~5.8.3",
+    "vercel": "^44.2.13"
+  },
+  "dependencies": {
+    "grammy": "^1.37.0"
+  }
+}
