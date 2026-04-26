@@ -1,38 +1,39 @@
 {
-	"name": "yc-faas-ai-bot-example",
-	"version": "0.0.0",
-	"private": true,
-	"scripts": {
-		"deploy": "wrangler deploy --env production",
-		"dev": "wrangler dev",
-		"start": "wrangler dev",
-		"test": "vitest",
-		"fmt": "biome format --write ./src",
-		"lint": "biome lint ./src",
-		"cf-typegen": "wrangler types",
-		"webhook": "dotenv -e .env -- tsx ./scripts/set-webhook.ts",
-		"secrets:prod": "wrangler secret bulk .env.production --env production",
-		"db:generate": "drizzle-kit generate",
-		"db:migrate": "wrangler d1 migrations apply yc-faas-ai-bot-example-db --remote"
-	},
-	"devDependencies": {
+    "name": "yc-faas-ai-bot-example",
+    "version": "0.0.0",
+    "private": true,
+    "type": "commonjs",
+    "scripts": {
+        "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.js --sourcemap",
+        "deploy": "pnpm run build && yc serverless function version create --function-name=$YC_FUNCTION_NAME --runtime=nodejs22 --entrypoint=index.handler --memory=256m --execution-timeout=60s --service-account-id=$YC_SERVICE_ACCOUNT_ID --environment=YDB_CONNECTION_STRING=$YDB_CONNECTION_STRING,BOT_TOKEN=$BOT_TOKEN,BOT_INFO=$BOT_INFO,LLM_API_BASE_URL=$LLM_API_BASE_URL,LLM_API_KEY=$LLM_API_KEY,LLM_MODEL=$LLM_MODEL,DEPLOYMENT_URL=$DEPLOYMENT_URL --source-path=./dist",
+        "deploy:prod": "dotenv -e .env.production -- pnpm run deploy",
+        "dev": "tsx scripts/dev.ts",
+        "fmt": "biome format --write ./src ./scripts",
+        "lint": "biome lint ./src ./scripts",
+        "ts": "tsc --noEmit",
+        "webhook": "dotenv -e .env.production -- tsx ./scripts/set-webhook.ts",
+        "db:init": "dotenv -e .env.production -- tsx ./scripts/init-db/init-db.ts"
+    },
+    "devDependencies": {
         "@biomejs/biome": "^2.4.13",
-		"@cloudflare/vitest-pool-workers": "^0.12.4",
-		"@types/node": "24.10.1",
-		"dotenv-cli": "^11.0.0",
-		"drizzle-kit": "^0.31.10",
-		"globals": "^16.4.0",
-		"tsx": "^4.21.0",
-		"typescript": "^5.5.2",
-		"vitest": "~3.2.0",
-		"wrangler": "^4.83.0"
-	},
-	"dependencies": {
-		"@ai-sdk/openai-compatible": "^2.0.41",
-		"@grammyjs/auto-retry": "^2.0.2",
-		"@grammyjs/stream": "^1.0.1",
-		"ai": "^6.0.168",
-		"drizzle-orm": "^0.45.2",
-		"grammy": "^1.42.0"
-	}
+        "@types/node": "24.10.1",
+        "@yandex-cloud/function-types": "^2.1.2",
+        "dotenv-cli": "^11.0.0",
+        "esbuild": "^0.24.0",
+        "globals": "^16.4.0",
+        "tsx": "^4.21.0",
+        "typescript": "^5.5.2"
+    },
+    "dependencies": {
+        "@ai-sdk/openai-compatible": "^2.0.41",
+        "@grammyjs/auto-retry": "^2.0.2",
+        "@grammyjs/stream": "^1.0.1",
+        "@ydbjs/auth": "^6.2.1",
+        "@ydbjs/core": "^6.1.1",
+        "@ydbjs/query": "^6.1.0",
+        "@ydbjs/value": "^6.0.0",
+        "ai": "^6.0.168",
+        "grammy": "^1.42.0",
+        "zod": "^3.23.8"
+    }
 }

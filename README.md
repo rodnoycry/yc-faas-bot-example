@@ -1,102 +1,200 @@
 # Yandex Cloud Functions AI Telegram ChatBot with YDB Example
 
-Basically a lot of steps are described in official Grammy library instructions: https://grammy.dev/hosting/cloudflare-workers-nodejs
+A minimal Telegram chatbot deployed to **Yandex Cloud Functions** with
+**Yandex Database (YDB)** for conversation history. The bot streams responses
+from any OpenAI-compatible LLM endpoint via the [Vercel AI SDK](https://ai-sdk.dev/)
+and [grammY](https://grammy.dev/).
 
-1. Create Telegram bot at https://t.me/BotFather
+## Architecture: synchronous webhook + async self-invocation
 
-2. Get telegram token, put it into `.env.production` under `BOT_TOKEN` variable like in `.env.example`
+Telegram requires a webhook to respond with **HTTP 200 quickly**, otherwise it
+retries the same update. LLM calls take seconds — too long to do inline.
 
-3. Go by https://api.telegram.org/bot<BOT_TOKEN>/getMe, you will get answer like this:
-```json
-{
-    "id": 1234567890,
-    "is_bot": true,
-    "first_name": "mybot",
-    "username": "MyBot",
-    "can_join_groups": true,
-    "can_read_all_group_messages": false,
-    "supports_inline_queries": true,
-    "can_connect_to_business": false
-}
-```
+Yandex Cloud Functions has a built-in **asynchronous invocation** mode that's
+perfect for this: append `?integration=async` to the function URL and the
+function returns **HTTP 202 immediately** while the actual handler runs in the
+background.
 
-Copy and paste it into `.env.production` under `BOT_INFO` like this (important to put it in single quotes!):
+So the function dispatches between two paths:
+
+1. **Sync path (Telegram webhook hits the public URL):**
+   - Parse the Telegram update.
+   - POST it back to *itself* at `?integration=async`, authenticated with the
+     IAM token from `context.token` (the SA attached to the function).
+   - Return 200 to Telegram.
+2. **Async path (self-invocation):**
+   - Open a YDB driver, run the LLM call, stream the reply to Telegram via
+     `bot.api`, save the exchange to YDB, close the driver.
+
+One function, no extra queues to manage. Failures on the async path could be
+routed to a YMQ DLQ later if you need retry/observability.
+
+References:
+- [Async function invocation](https://yandex.cloud/en/docs/functions/concepts/function-invoke-async)
+- [Invoking a function (overview)](https://yandex.cloud/en/docs/functions/concepts/function-invoke)
+
+## YDB driver lifecycle
+
+The YDB SDK uses HTTP/2 connections that **must not be reused across
+serverless invocations** — a cached driver causes hangs and intermittent
+errors. The handler creates a `Driver` inside the request scope and closes it
+in `finally`. See `src/index.ts:handleAsync`.
+
+## Prerequisites
+
+- [Yandex Cloud CLI](https://yandex.cloud/en/docs/cli/quickstart) (`yc`)
+- Node.js 22+, `pnpm`
+- A Telegram bot token from [@BotFather](https://t.me/BotFather)
+- An OpenAI-compatible LLM endpoint (URL + API key + model name)
+
+## 1. Configure env vars
+
 ```sh
-BOT_INFO='{
-    "id": 1234567890,
-    "is_bot": true,
-    "first_name": "mybot",
-    "username": "MyBot",
-    "can_join_groups": true,
-    "can_read_all_group_messages": false,
-    "supports_inline_queries": true,
-    "can_connect_to_business": false
-}'
+cp .env.example .env.production
 ```
 
-4. [Optionally] Set `.env.dev` for development profile for local tests (will probably require setting up `ngrok` for valid https webhook set up)
+Fill in `.env.production`:
 
-5. Deploy in order to get the deployment URL:
+- `BOT_TOKEN` — from BotFather.
+- `BOT_INFO` — paste the full JSON from `https://api.telegram.org/bot<BOT_TOKEN>/getMe`
+  (single-quoted).
+- `LLM_API_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` — your LLM endpoint.
+
+The remaining values (`YC_*`, `YDB_*`, `DEPLOYMENT_URL`) are filled in during
+the steps below.
+
+## 2. Create a YDB serverless database
+
+In the [YDB console](https://console.yandex.cloud/) → "Create database" →
+"Serverless". Once it's `RUNNING`, copy the **gRPC connection string** from
+the overview page into `YDB_CONNECTION_STRING`.
+
+## 3. Create a service account and grant YDB access
+
 ```sh
-pnpm run deploy
+# Service account that the function will run as.
+yc iam service-account create --name=yc-faas-ai-bot-sa
+
+# Get its ID.
+yc iam service-account get --name=yc-faas-ai-bot-sa --format=json | jq -r .id
+# → put this value into YC_SERVICE_ACCOUNT_ID in .env.production
+
+# Grant ydb.editor on the folder containing your YDB database.
+yc resource-manager folder add-access-binding <folder-id> \
+    --role=ydb.editor \
+    --subject="serviceAccount:<service-account-id>"
+
+# Also grant the function permission to invoke itself asynchronously.
+yc resource-manager folder add-access-binding <folder-id> \
+    --role=serverless.functions.invoker \
+    --subject="serviceAccount:<service-account-id>"
 ```
 
-And follow the instructions from `wrangler`
+## 4. Initialize the DB schema
 
-6. After the deployment you will see something like:
-```txt
-Deployed ai-korobka-bot triggers (2.08 sec)
-  https://ai-korobka-bot.<username>.workers.dev
-```
+For local invocation of the init script, get a short-lived IAM token and put
+it into `.env.production` as `YDB_ACCESS_TOKEN_CREDENTIALS`:
 
-Put the link into `.env.production` like this:
 ```sh
-DEPLOYMENT_URL="https://ai-korobka-bot.<username>.workers.dev/"
+yc iam create-token
 ```
 
-Notice the `/` at the end
+Then create the `messages` table:
 
-7. Now run webhook to connect deployed version to the telegram:
+```sh
+pnpm install
+pnpm run db:init
+```
+
+`scripts/init-db/init.sql` defines the schema. Re-run `pnpm run db:init`
+whenever you change the SQL.
+
+## 5. Create the Cloud Function
+
+```sh
+yc serverless function create --name=yc-faas-ai-bot-example
+yc serverless function allow-unauthenticated-invoke yc-faas-ai-bot-example
+```
+
+`YC_FUNCTION_NAME` in `.env.production` must match the name above.
+
+The first deploy needs `DEPLOYMENT_URL` to be set — but you don't have it
+yet. Put a placeholder for now (e.g. `https://placeholder/`) and update it
+after the first deploy.
+
+## 6. First deploy
+
+```sh
+pnpm run deploy:prod
+```
+
+This bundles `src/index.ts` with esbuild and creates a new function version
+with all env vars set. After it finishes, the function gets a stable invoke
+URL of the form:
+
+```
+https://functions.yandexcloud.net/<function-id>
+```
+
+You can also fetch it via:
+
+```sh
+yc serverless function get --name=yc-faas-ai-bot-example --format=json | jq -r .http_invoke_url
+```
+
+Put that URL into `.env.production` as `DEPLOYMENT_URL` (trailing slash is
+fine but not required).
+
+## 7. Second deploy with the real URL
+
+```sh
+pnpm run deploy:prod
+```
+
+The function now knows its own URL and can self-invoke async.
+
+## 8. Register the Telegram webhook
+
 ```sh
 pnpm run webhook
 ```
 
-8. Go and check it out, should work, great job!
+`scripts/set-webhook.ts` calls Telegram's `setWebhook` with `DEPLOYMENT_URL`.
+Telegram should respond with `{"ok":true,"result":true,"description":"Webhook
+was set"}`.
 
-9. Similar set up can be done for dev environment too
+## 9. Test
 
-10. Set up LLM endpoints in `.env.*` files:
+Send any message to your bot. Run:
+
 ```sh
-# OpenAI-compatible LLM endpoint
-LLM_API_BASE_URL="https://your-api-endpoint.com/v1"
-LLM_API_KEY="xxxxxxxxxxxxxxxxxxxxxxxx"
-LLM_MODEL="your-model-name"
+yc serverless function logs yc-faas-ai-bot-example --since=10m
 ```
 
-11. Create a D1 database for conversation history:
-```sh
-npx wrangler d1 create ai-korobka-bot-db
+…to see the sync→async hand-off. The bot should reply with a streamed message.
+
+Use `/new` to clear conversation history for the current chat.
+
+## Project layout
+
+```
+src/
+  index.ts        — handler with sync/async dispatch
+  db.ts           — YDB driver factory + history queries (zod-validated)
+  logger.ts
+scripts/
+  init-db/
+    init-db.ts    — runs init.sql against your YDB
+    init.sql      — schema
+  set-webhook.ts  — registers the Telegram webhook
+  dev.ts          — placeholder (local dev not implemented)
 ```
 
-You will get output like this:
-```
-database_name = "ai-korobka-bot-db"
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-```
+## Local development
 
-Make sure the `database_id` in `wrangler.jsonc` under `d1_databases` matches the one you got.
+Not implemented. `pnpm run dev` prints a placeholder message and exits.
+Iterate via `pnpm run deploy:prod` + `yc serverless function logs`.
 
-12. Apply the database schema to remote (production):
-```sh
-pnpm run db:generate
-pnpm run db:migrate
-```
+## License
 
-Run both again whenever the schema in `src/db/schema.ts` changes.
-
-13. For local development, create the tables in the local D1 instance:
-```sh
-npx wrangler d1 execute ai-korobka-bot-db --local --command="CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL);"
-```
-
-The local D1 database is stored under `.wrangler/state/` and is separate from the remote one. `pnpm run db:migrate` only applies to remote — locally you need to create tables manually.
+MIT — see `LICENSE`.

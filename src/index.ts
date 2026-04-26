@@ -1,27 +1,51 @@
-import { Bot, webhookCallback } from "grammy"
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { autoRetry } from "@grammyjs/auto-retry"
 import { streamApi } from "@grammyjs/stream"
-import { streamText, type LanguageModel } from "ai"
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
-import { eq, asc } from "drizzle-orm"
-import { createDb, type Database } from "./db"
-import { messages } from "./db/schema"
+import type { Http } from "@yandex-cloud/function-types/dist/src/http"
+import type { Update } from "grammy/types"
+import { type LanguageModel, streamText } from "ai"
+import { Bot } from "grammy"
+import {
+    clearChatHistory,
+    createDriver,
+    createSql,
+    getChatHistory,
+    saveMessage,
+    type Sql,
+} from "./db"
 import { logger } from "./logger"
 
-export interface Env {
+interface Env {
     BOT_INFO: string
     BOT_TOKEN: string
     LLM_API_BASE_URL: string
     LLM_API_KEY: string
     LLM_MODEL: string
-    DB: D1Database
-    MESSAGE_QUEUE: Queue<QueueMessage>
+    DEPLOYMENT_URL: string
 }
 
-interface QueueMessage {
-    chatId: number
-    text: string
-    updateId: number
+function readEnv(): Env {
+    const required = [
+        "BOT_INFO",
+        "BOT_TOKEN",
+        "LLM_API_BASE_URL",
+        "LLM_API_KEY",
+        "LLM_MODEL",
+        "DEPLOYMENT_URL",
+    ] as const
+    for (const key of required) {
+        if (!process.env[key]) {
+            throw new Error(`${key} is not set`)
+        }
+    }
+    return {
+        BOT_INFO: process.env.BOT_INFO as string,
+        BOT_TOKEN: process.env.BOT_TOKEN as string,
+        LLM_API_BASE_URL: process.env.LLM_API_BASE_URL as string,
+        LLM_API_KEY: process.env.LLM_API_KEY as string,
+        LLM_MODEL: process.env.LLM_MODEL as string,
+        DEPLOYMENT_URL: process.env.DEPLOYMENT_URL as string,
+    }
 }
 
 const SYSTEM_PROMPT = [
@@ -49,60 +73,11 @@ const SYSTEM_PROMPT = [
     "Also - try to use markdown less, like - numbered and markered lists okay if you want, but without bold or italic text, code blocks should work though",
 ].join(" ")
 
-async function getChatHistory(db: Database, chatId: number) {
-    const rows = await db
-        .select({ role: messages.role, content: messages.content })
-        .from(messages)
-        .where(eq(messages.chatId, chatId))
-        .orderBy(asc(messages.createdAt))
-
-    return rows.map((row) => ({
-        role: row.role as "user" | "assistant",
-        content: row.content,
-    }))
+interface FunctionContext {
+    token?: { access_token: string; expires_in: number; token_type: string }
 }
 
-async function saveMessage(
-    db: Database,
-    chatId: number,
-    role: "user" | "assistant",
-    content: string,
-) {
-    await db.insert(messages).values({ chatId, role, content })
-}
-
-async function clearChatHistory(db: Database, chatId: number) {
-    await db.delete(messages).where(eq(messages.chatId, chatId))
-}
-
-async function handleLLMResponse(
-    db: Database,
-    model: LanguageModel,
-    chatId: number,
-    userText: string,
-    api: Bot["api"],
-    draftIdOffset: number,
-) {
-    const [history] = await Promise.all([
-        getChatHistory(db, chatId),
-        saveMessage(db, chatId, "user", userText),
-    ])
-
-    const { textStream, text: textPromise } = streamText({
-        model,
-        system: SYSTEM_PROMPT,
-        messages: [...history, { role: "user", content: userText }],
-    })
-
-    await api.sendChatAction(chatId, "typing")
-    const { streamMessage } = streamApi(api.raw)
-    await streamMessage(chatId, draftIdOffset, textStream)
-
-    const fullText = await textPromise
-    await saveMessage(db, chatId, "assistant", fullText)
-}
-
-function createBot(env: Env) {
+function createBot(env: Env): Bot {
     const bot = new Bot(env.BOT_TOKEN, {
         botInfo: JSON.parse(env.BOT_INFO),
     })
@@ -118,55 +93,158 @@ function createProvider(env: Env) {
     })
 }
 
-export default {
-    async fetch(request: Request, env: Env): Promise<Response> {
-        const bot = createBot(env)
-        const db = createDb(env.DB)
+async function handleLLMResponse(
+    sql: Sql,
+    model: LanguageModel,
+    chatId: number,
+    userText: string,
+    api: Bot["api"],
+    draftIdOffset: number,
+): Promise<void> {
+    const [history] = await Promise.all([
+        getChatHistory(sql, chatId),
+        saveMessage(sql, chatId, "user", userText),
+    ])
 
-        bot.command("start", (ctx) =>
-            ctx.reply(
-                "Привет! Отправь мне текстовое сообщение, и я постараюсь быть полезным",
-            ),
-        )
+    const { textStream, text: textPromise } = streamText({
+        model,
+        system: SYSTEM_PROMPT,
+        messages: [...history, { role: "user", content: userText }],
+    })
 
-        bot.command("new", async (ctx) => {
-            await clearChatHistory(db, ctx.chat.id)
-            await ctx.reply("Контекст очищен")
-        })
+    await api.sendChatAction(chatId, "typing")
+    const { streamMessage } = streamApi(api.raw)
+    await streamMessage(chatId, draftIdOffset, textStream)
 
-        bot.on("message:text", async (ctx) => {
-            await ctx.api.sendChatAction(ctx.chat.id, "typing")
-            await env.MESSAGE_QUEUE.send({
-                chatId: ctx.chat.id,
-                text: ctx.message.text,
-                updateId: ctx.update.update_id,
-            })
-        })
+    const fullText = await textPromise
+    await saveMessage(sql, chatId, "assistant", fullText)
+}
 
-        return webhookCallback(bot, "cloudflare-mod")(request)
-    },
+function registerSyncHandlers(bot: Bot, env: Env, accessToken: string): void {
+    bot.command("start", (ctx) =>
+        ctx.reply(
+            "Привет! Отправь мне текстовое сообщение, и я постараюсь быть полезным",
+        ),
+    )
 
-    async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
-        const bot = createBot(env)
-        const db = createDb(env.DB)
+    bot.on("message:text", async (ctx) => {
+        await ctx.api.sendChatAction(ctx.chat.id, "typing")
+        await invokeAsync(env.DEPLOYMENT_URL, accessToken, ctx.update)
+    })
+}
+
+function registerAsyncHandlers(bot: Bot, sql: Sql, env: Env): void {
+    bot.command("new", async (ctx) => {
+        await clearChatHistory(sql, ctx.chat.id)
+        await ctx.reply("Контекст очищен")
+    })
+
+    bot.on("message:text", async (ctx) => {
         const provider = createProvider(env)
+        await handleLLMResponse(
+            sql,
+            provider.chatModel(env.LLM_MODEL),
+            ctx.chat.id,
+            ctx.message.text,
+            ctx.api,
+            256 * ctx.update.update_id,
+        )
+    })
+}
 
-        for (const msg of batch.messages) {
-            const { chatId, text, updateId } = msg.body
-            try {
-                await handleLLMResponse(
-                    db,
-                    provider.chatModel(env.LLM_MODEL),
-                    chatId,
-                    text,
-                    bot.api,
-                    256 * updateId,
+async function invokeAsync(
+    deploymentUrl: string,
+    accessToken: string,
+    update: Update,
+): Promise<void> {
+    const url = `${deploymentUrl.replace(/\/$/, "")}?integration=async`
+    const res = await fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(update),
+    })
+    if (res.status !== 202) {
+        const text = await res.text()
+        throw new Error(
+            `Async self-invocation failed: ${res.status} ${res.statusText} ${text}`,
+        )
+    }
+}
+
+function isHttpEvent(event: unknown): event is Http.Event {
+    return (
+        typeof event === "object" &&
+        event !== null &&
+        "httpMethod" in event &&
+        "headers" in event
+    )
+}
+
+function parseAsyncBody(event: unknown): Update {
+    if (typeof event === "string") {
+        return JSON.parse(event) as Update
+    }
+    if (event instanceof Uint8Array) {
+        return JSON.parse(Buffer.from(event).toString("utf-8")) as Update
+    }
+    if (typeof event === "object" && event !== null) {
+        // Some runtimes deliver the body already as a parsed object.
+        return event as Update
+    }
+    throw new Error("Unexpected async invocation event shape")
+}
+
+async function handleSync(
+    event: Http.Event,
+    accessToken: string,
+): Promise<Http.Result> {
+    const env = readEnv()
+    const body = event.isBase64Encoded
+        ? Buffer.from(event.body, "base64").toString("utf-8")
+        : event.body
+    const update = JSON.parse(body) as Update
+    const bot = createBot(env)
+    registerSyncHandlers(bot, env, accessToken)
+    await bot.handleUpdate(update)
+    return { statusCode: 200, body: "" }
+}
+
+async function handleAsync(event: unknown): Promise<void> {
+    const env = readEnv()
+    const update = parseAsyncBody(event)
+    const driver = createDriver()
+    try {
+        await driver.ready()
+        const sql = createSql(driver)
+        const bot = createBot(env)
+        registerAsyncHandlers(bot, sql, env)
+        await bot.handleUpdate(update)
+    } finally {
+        await driver.close()
+    }
+}
+
+export const handler = async (
+    event: unknown,
+    context: FunctionContext,
+): Promise<unknown> => {
+    try {
+        if (isHttpEvent(event)) {
+            const accessToken = context.token?.access_token
+            if (!accessToken) {
+                throw new Error(
+                    "Function context has no IAM token — attach a service account",
                 )
-                msg.ack()
-            } catch (err) {
-                logger.error("Queue message failed:", err)
-                msg.retry()
             }
+            return await handleSync(event, accessToken)
         }
-    },
+        await handleAsync(event)
+        return { statusCode: 200, body: "" }
+    } catch (err) {
+        logger.error("Handler failed:", err)
+        throw err
+    }
 }
