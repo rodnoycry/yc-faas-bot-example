@@ -1,9 +1,6 @@
 # Yandex Cloud Functions AI Telegram ChatBot with YDB Example
 
-A minimal Telegram chatbot deployed to **Yandex Cloud Functions** with
-**Yandex Database (YDB)** for conversation history. The bot streams responses
-from any OpenAI-compatible LLM endpoint via the [Vercel AI SDK](https://ai-sdk.dev/)
-and [grammY](https://grammy.dev/).
+A minimal Telegram chatbot deployed to [Yandex Cloud Functions](https://yandex.cloud/en/services/functions) with [Yandex Database (YDB)](https://ydb.tech/) for conversation history. The bot streams responses from any OpenAI-compatible LLM endpoint via the [Vercel AI SDK](https://ai-sdk.dev/) and [grammY](https://grammy.dev/).
 
 ## Architecture: synchronous webhook + async self-invocation
 
