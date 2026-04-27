@@ -83,7 +83,9 @@ function registerSyncHandlers({
     accessToken: string
 }): void {
     bot.command("start", (ctx) =>
-        ctx.reply("Hi! Send me a message and I will try to help you"),
+        ctx.reply(
+            "Привет, отправь мне сообщение и я постараюсь принести пользу",
+        ),
     )
 
     bot.on("message:text", async (ctx) => {
@@ -109,7 +111,7 @@ function registerAsyncHandlers({
 }): void {
     bot.command("new", async (ctx) => {
         await clearChatHistory(sql, ctx.chat.id)
-        await ctx.reply("Context cleared")
+        await ctx.reply("Контекст очищен")
     })
 
     bot.on("message:text", async (ctx) => {
