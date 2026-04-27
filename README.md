@@ -136,13 +136,39 @@ after the first deploy.
 
 ## 6. First deploy
 
+Bundle `src/index.ts` with esbuild:
+
 ```sh
-pnpm run deploy:prod
+pnpm run build
 ```
 
-This bundles `src/index.ts` with esbuild and creates a new function version
-with all env vars set. After it finishes, the function gets a stable invoke
-URL of the form:
+Load the env vars from `.env.production` into your shell, then create a new
+function version:
+
+```sh
+set -a
+. ./.env.production
+set +a
+
+yc serverless function version create \
+    --function-name=$YC_FUNCTION_NAME \
+    --runtime=nodejs22 \
+    --entrypoint=index.handler \
+    --memory=256m \
+    --execution-timeout=60s \
+    --service-account-id=$YC_SERVICE_ACCOUNT_ID \
+    --source-path=./dist \
+    --environment=YDB_CONNECTION_STRING=$YDB_CONNECTION_STRING \
+    --environment=BOT_TOKEN=$BOT_TOKEN \
+    --environment=BOT_INFO=$BOT_INFO \
+    --environment=AI_PROVIDER_NAME=$AI_PROVIDER_NAME \
+    --environment=AI_PROVIDER_BASE_URL=$AI_PROVIDER_BASE_URL \
+    --environment=AI_PROVIDER_API_KEY=$AI_PROVIDER_API_KEY \
+    --environment=AI_PROVIDER_MODEL=$AI_PROVIDER_MODEL \
+    --environment=DEPLOYMENT_URL=$DEPLOYMENT_URL
+```
+
+After it finishes, the function gets a stable invoke URL of the form:
 
 ```
 https://functions.yandexcloud.net/<function-id>
@@ -159,11 +185,8 @@ fine but not required).
 
 ## 7. Second deploy with the real URL
 
-```sh
-pnpm run deploy:prod
-```
-
-The function now knows its own URL and can self-invoke async.
+Re-run the `pnpm run build` + `yc serverless function version create` commands
+from step 6. The function now knows its own URL and can self-invoke async.
 
 ## 8. Register the Telegram webhook
 
@@ -205,7 +228,6 @@ scripts/
 ## Local development
 
 Not implemented. `pnpm run dev` prints a placeholder message and exits.
-Iterate via `pnpm run deploy:prod` + `yc serverless function logs`.
 
 ## License
 
