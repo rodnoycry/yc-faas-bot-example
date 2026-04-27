@@ -7,6 +7,9 @@ A minimal Telegram chatbot deployed to [Yandex Cloud Functions](https://yandex.c
 Telegram requires a webhook to respond with **HTTP 200 quickly**, otherwise it
 retries the same update. LLM calls take seconds — too long to do inline.
 
+Reference:
+https://grammy.dev/guide/deployment-types#how-to-use-webhooks
+
 Yandex Cloud Functions has a built-in **asynchronous invocation** mode that's
 perfect for this: append `?integration=async` to the function URL and the
 function returns **HTTP 202 immediately** while the actual handler runs in the
