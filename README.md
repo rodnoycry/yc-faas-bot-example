@@ -123,7 +123,6 @@ yc iam create-token
 Then create the `messages` table:
 
 ```sh
-pnpm install
 pnpm run db:init
 ```
 
