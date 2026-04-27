@@ -86,12 +86,21 @@ the overview page into `YDB_CONNECTION_STRING`.
 ```sh
 # Service account that the function will run as.
 yc iam service-account create --name=yc-faas-ai-bot-sa
+```
 
-# Get its ID.
-yc iam service-account get --name=yc-faas-ai-bot-sa --format=json | jq -r .id
-# → put this value into YC_SERVICE_ACCOUNT_ID in .env.production
+You will see output like that:
+```
+id: xxxxxxxxxxxxxxxxxx
+folder_id: xxxxxxxxxxxxxxxxxxx
+created_at: "20XX-XX-XXTXX:XX:XXZ"
+name: yc-faas-ai-bot-sa
+```
 
-# Grant ydb.editor on the folder containing your YDB database.
+Copy the `id` field and put it into `.env.production` as `YC_SERVICE_ACCOUNT_ID` value
+
+Then take `folder_id` field and run this command to allow editing of YDB database inside of the folder:
+
+```sh
 yc resource-manager folder add-access-binding <folder-id> \
     --role=ydb.editor \
     --subject="serviceAccount:<service-account-id>"
