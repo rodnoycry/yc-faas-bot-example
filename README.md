@@ -204,7 +204,7 @@ fine but not required).
 ## 7. Second deploy with the real URL
 
 Re-run the `pnpm run build` + `yc serverless function version create` commands
-from step 6. The function now knows its own URL and can self-invoke async.
+from step 6, including re-injection of `.env.production` env variables. The function now knows its own URL and can self-invoke async.
 
 ## 8. Register the Telegram webhook
 
