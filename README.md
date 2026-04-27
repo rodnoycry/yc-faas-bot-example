@@ -4,6 +4,13 @@ A minimal Telegram chatbot deployed to [Yandex Cloud Functions](https://yandex.c
 
 ## Architecture: synchronous webhook + async self-invocation
 
+> **Note:** Async function invocation (`?integration=async`) is at the
+> [Preview stage](https://yandex.cloud/en/docs/overview/concepts/launch-stages)
+> in Yandex Cloud Functions and must be enabled per function version with the
+> `--async` flag (see step 6). If you need a GA-only setup, the same bot can
+> be wired with a YMQ-triggered worker function instead — that variant is the
+> production-ready path.
+
 Telegram requires a webhook to respond with **HTTP 200 quickly**, otherwise it
 retries the same update. LLM calls take seconds — too long to do inline.
 
@@ -42,6 +49,15 @@ errors. The handler creates a `Driver` inside the request scope and closes it
 in `finally`. See `src/index.ts:handleAsync`.
 Reference:
 - https://github.com/ydb-platform/ydb-js-sdk/tree/main/examples/sls#readme
+
+## YDB credentials inside the function
+
+`EnvironCredentialsProvider` picks an auth method by env var. On YCF the
+function inherits an SA with `ydb.editor`, so we set
+`YDB_METADATA_CREDENTIALS=1` at deploy time — the SDK then mints IAM tokens
+through the function's metadata service. Locally the `db:init` script uses
+`YDB_ACCESS_TOKEN_CREDENTIALS` from `.env.production` instead (no metadata
+service on your laptop).
 
 ## grammY + Node 22 fetch override
 
@@ -198,8 +214,11 @@ yc serverless function version create \
     --memory=256m \
     --execution-timeout=60s \
     --service-account-id=$YC_SERVICE_ACCOUNT_ID \
+    --async \
+    --async-service-account-id=$YC_SERVICE_ACCOUNT_ID \
     --source-path=./dist \
     --environment=YDB_CONNECTION_STRING="$YDB_CONNECTION_STRING" \
+    --environment=YDB_METADATA_CREDENTIALS=1 \
     --environment=BOT_TOKEN="$BOT_TOKEN" \
     --environment=BOT_INFO="$BOT_INFO" \
     --environment=AI_PROVIDER_NAME="$AI_PROVIDER_NAME" \
