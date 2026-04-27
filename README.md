@@ -133,6 +133,7 @@ whenever you change the SQL.
 
 ```sh
 yc serverless function create --name=yc-faas-ai-bot-example
+# And allow public access of it in order for telegram to send webhook events to our endpoint
 yc serverless function allow-unauthenticated-invoke yc-faas-ai-bot-example
 ```
 
