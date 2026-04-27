@@ -43,6 +43,38 @@ in `finally`. See `src/index.ts:handleAsync`.
 Reference:
 - https://github.com/ydb-platform/ydb-js-sdk/tree/main/examples/sls#readme
 
+## grammY + Node 22 fetch override
+
+grammY 1.x ships [`node-fetch`](https://www.npmjs.com/package/node-fetch) as a
+hard dependency for compatibility with old Node versions. On Node 22 (the YCF
+runtime here) this causes API calls to throw
+
+```
+TypeError: Expected signal to be an instanceof AbortSignal
+```
+
+— grammY constructs a native `AbortSignal`, but the bundled `node-fetch`
+`Request` constructor only accepts its own `AbortSignal` class. The grammY
+maintainers have marked this as `wontfix` until a 2.0 major:
+https://github.com/grammyjs/grammY/issues/409
+
+Workaround: replace `node-fetch` with
+[`node-fetch-native`](https://www.npmjs.com/package/node-fetch-native), a
+drop-in re-export of Node's native fetch + WHATWG types. `package.json`
+declares it via `pnpm.overrides` so every transitive `node-fetch` import
+resolves to it:
+
+```json
+"pnpm": {
+    "overrides": {
+        "node-fetch": "npm:node-fetch-native@^1.6.4"
+    }
+}
+```
+
+Verify with `pnpm why node-fetch` after install — it should show
+`node-fetch npm:node-fetch-native@<version>`.
+
 ## Prerequisites
 
 - [Yandex Cloud CLI](https://yandex.cloud/en/docs/cli/quickstart) (`yc`)

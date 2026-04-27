@@ -33,5 +33,10 @@
         "ai": "^6.0.168",
         "grammy": "^1.42.0",
         "zod": "^3.23.8"
+    },
+    "pnpm": {
+        "overrides": {
+            "node-fetch": "npm:node-fetch-native@^1.6.4"
+        }
     }
 }
