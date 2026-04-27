@@ -167,23 +167,32 @@ yc serverless function version create \
     --execution-timeout=60s \
     --service-account-id=$YC_SERVICE_ACCOUNT_ID \
     --source-path=./dist \
-    --environment=YDB_CONNECTION_STRING=$YDB_CONNECTION_STRING \
-    --environment=BOT_TOKEN=$BOT_TOKEN \
-    --environment=BOT_INFO=$BOT_INFO \
-    --environment=AI_PROVIDER_NAME=$AI_PROVIDER_NAME \
-    --environment=AI_PROVIDER_BASE_URL=$AI_PROVIDER_BASE_URL \
-    --environment=AI_PROVIDER_API_KEY=$AI_PROVIDER_API_KEY \
-    --environment=AI_PROVIDER_MODEL=$AI_PROVIDER_MODEL \
-    --environment=DEPLOYMENT_URL=$DEPLOYMENT_URL
+    --environment=YDB_CONNECTION_STRING="$YDB_CONNECTION_STRING" \
+    --environment=BOT_TOKEN="$BOT_TOKEN" \
+    --environment=BOT_INFO="$BOT_INFO" \
+    --environment=AI_PROVIDER_NAME="$AI_PROVIDER_NAME" \
+    --environment=AI_PROVIDER_BASE_URL="$AI_PROVIDER_BASE_URL" \
+    --environment=AI_PROVIDER_API_KEY="$AI_PROVIDER_API_KEY" \
+    --environment=AI_PROVIDER_MODEL="$AI_PROVIDER_MODEL" \
+    --environment=DEPLOYMENT_URL="$DEPLOYMENT_URL"
 ```
 
-After it finishes, the function gets a stable invoke URL of the form:
+After it finishes, you will see output like this:
+```
+id: xxxxxxxxxxxxxxx
+function_id: xxxxxxxxxxxxxxxxxxxx
+created_at: "20XX-XX-XXTXX:XX:XX.XXXZ"
+runtime: nodejs22
+entrypoint: index.handler
+```
+
+The function now has stable invoke URL of the form:
 
 ```
 https://functions.yandexcloud.net/<function-id>
 ```
 
-You can also fetch it via:
+You can also fetch function id via:
 
 ```sh
 yc serverless function get --name=yc-faas-ai-bot-example --format=json | jq -r .http_invoke_url
